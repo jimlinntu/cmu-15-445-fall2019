@@ -17,3 +17,5 @@
 * <https://www.youtube.com/watch?v=HXV3zeQKqGY&ab_channel=freeCodeCamp.orgfreeCodeCamp.org>
 * <https://www.tutorialspoint.com/sqlite/sqlite_using_joins.htm>
 * <https://www.sqlitetutorial.net/sqlite-join/>
+* <https://www.sqlite.org/lang_select.html>: `SELECT` state graph.
+* <https://www.techonthenet.com/sqlite/joins.php#:~:text=SQLite%20JOINS%20are%20used%20to,or%20sometimes%20called%20LEFT%20JOIN)>
