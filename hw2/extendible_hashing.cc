@@ -44,7 +44,17 @@ struct HashTable {
         return key & ((1 << g)-1);
     }
 
+    bool find(int key){
+        for(int k: buckets[table[hash(key)]].keys){
+            if(k == key) return true;
+        }
+        return false;
+    }
+
     void insert(int key){
+        // This key already exists
+        if(find(key)) return;
+
         while(true){
             int bidx = table[hash(key)];
             if(buckets[bidx].put_key(key)) break;
@@ -60,7 +70,7 @@ struct HashTable {
             int new_n = 1 << (++g);
             table.resize(new_n);
             for(int i = n; i < new_n; i++){
-                // table[i] points to where table[i-n]s to
+                // table[i] points to where table[i-n] points to
                 table[i] = table[i-n];
             }
         }
@@ -78,11 +88,16 @@ struct HashTable {
         int l = copied.l;
         buckets.push_back(Bucket(l, bucket_capacity));
 
-        // Point last half of them to the last element
-        // First half of pointers will still point to buckets[bidx]
+        // Point odd half of them to the new bucket
         int num_ptrs = 1 << (g-l);
         assert(num_ptrs >= 2);
-        for(int i = num_ptrs / 2; i < num_ptrs; i++){
+        // Ex: 0001, 0101, 1001, 1101 can point to the same bucket (if we consider 2 bits)
+        //      ---   $$$   ---   $$$
+        //     ^^^^        ^^^^       <----- Should point to different buckets after the split
+        //           ****        **** <-----
+        //      0     1     2     3
+        //            ^           ^   <----- I let there points to the new bucket
+        for(int i = 1; i < num_ptrs; i += 2){
             int idx = (i << l) | (hash(key) & ((1 << l) - 1));
             // This is where it original points to
             assert(table[idx] == bidx);
@@ -90,11 +105,11 @@ struct HashTable {
             table[idx] = buckets.size()-1;
         }
 
-        // Increment their local l counter
+        // Increment their local l counters
         buckets[bidx].l++;
         buckets.back().l++;
 
-        // Re-put the content of copied back to these two buckets
+        // Re-put the keys back to these two buckets
         for(int k: copied.keys){
             buckets[table[hash(k)]].put_key(k);
         }
@@ -111,7 +126,7 @@ ostream &operator<<(ostream &os, const HashTable &table){
     }
     int b_n = table.buckets.size();
     for(int i = 0; i < b_n; i++){
-        os << "buckets[" << i << "]:";
+        os << "buckets[" << i << "] (l == " << table.buckets[i].l << ") :";
         for(int j = 0; j < table.buckets[i].keys.size(); j++){
             os << " "<< table.buckets[i].keys[j];
         }
@@ -124,7 +139,9 @@ ostream &operator<<(ostream &os, const HashTable &table){
 int main(){
     vector<int> insert_nums = {15, 3, 7, 14, 1, 9, 23, 11, 17};
     HashTable ht(2);
+    cout << "Question 3(a)-(b):" << "\n";
     for(int num: insert_nums){
+        cout << "Insert: " << num << "\n";
         ht.insert(num);
         cout << ht;
     }
