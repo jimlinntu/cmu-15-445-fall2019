@@ -22,6 +22,14 @@ struct Bucket {
         keys.push_back(key);
         return true;
     }
+
+    void del(int key){
+        auto it = find(keys.begin(), keys.end(), key);
+        if(it != keys.end()){
+            keys.erase(it);
+        }
+    }
+
     void clear(){
         keys.clear();
     }
@@ -62,6 +70,71 @@ struct HashTable {
             grow(key);
         }
     }
+
+    void del(int key, bool compress){
+        // Not found, return
+        if(!find(key)) return;
+        buckets[table[hash(key)]].del(key);
+
+        if(!compress) return;
+        // Keep merging
+        while(merge(key)){
+        }
+        // O(n): scan over the table
+        int max_l = -1;
+        for(int i: table){
+            max_l = max(max_l, buckets[i].l);
+        }
+        // Resize the table and shrink to the maximum l size
+        assert(max_l != -1);
+        g = max_l;
+        table.resize(1 << g);
+    }
+
+    bool merge(int key){
+        // Search if we can compress the hash table
+        // Ex.
+        // Say: 00010, 01010, 10010, 11010 (l == 3) and g == 5
+        //        ---    ---    ---    ---
+        // And we want to consider a bucket that has the same l == 3 and share the same 2 bits
+        // If that bucket exists, it should be like:
+        //      ??110
+        //        ---
+        // Because its depth should be 3 and ??010 will all point to this bucket already
+        // Futhermore, because ??110 is of depth 3
+        //      00110, 01110, 10110, 11110
+        //        ---    ---    ---    ---
+        // Should all point to the same bucket as well
+        int bidx = table[hash(key)];
+        int l = buckets[bidx].l;
+        if(l == 0) return false; // nothing to merge
+        // Modify the l-1 bits. Ex: 010 -> 110
+        int bidx2 = table[hash(key) ^ (1 << (l-1))];
+        // Test if their depth are the same and one capacity is enough for two buckets' contents
+        if(l == buckets[bidx2].l and buckets[bidx].keys.size() + buckets[bidx2].keys.size() <= bucket_capacity){
+            // Merge them: put all contents into buckets[bidx]
+            for(int k: buckets[bidx2].keys){
+                assert(buckets[bidx].put_key(k));
+            }
+            // NOTE: this bucket will become somehow like a memory link
+            //       In practice, I think vector<Bucket*> will be enough because we can free the content of Bucket
+            //       Of course, there is still a Bucket* pointer left, but I think that will be enough.
+            buckets[bidx2].l = -1; // Mark it as memory leak
+            buckets[bidx2].clear();
+            // Point them to bidx
+            int num_ptrs = 1 << (g-l);
+            for(int i = 0; i < num_ptrs; i++){
+                int idx = (i << l) | ((hash(key) ^ (1 << (l-1))) & ((1 << l) - 1));
+                assert(table[idx] == bidx2);
+                table[idx] = bidx;
+            }
+            // Decrease it local counter
+            buckets[bidx].l--;
+            return true;
+        }
+        return false;
+    }
+
     void grow(int key){
         int bidx = table[hash(key)];
         if(g == buckets[bidx].l){
@@ -144,6 +217,19 @@ int main(){
         cout << "Insert: " << num << "\n";
         ht.insert(num);
         cout << ht;
+    }
+    cout << "Question 3(c):" << "\n";
+    HashTable ht2(3);
+    insert_nums = {2, 5, 13, 29, 7, 15, 1};
+    for(int num: insert_nums){
+        cout << "Insert: " << num << "\n";
+        ht2.insert(num);
+        cout << ht2;
+    }
+    vector<int> delete_nums = {2, 7, 13, 15};
+    for(int dnum: delete_nums){
+        ht2.del(dnum, true);
+        cout << ht2;
     }
     return 0;
 }
