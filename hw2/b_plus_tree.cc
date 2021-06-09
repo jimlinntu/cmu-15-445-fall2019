@@ -103,7 +103,11 @@ struct BPlusTree {
         TreeNode *new_L = new TreeNode(true, n_child, n_keys);
         // Copy half of key and tuple_indices to the right
         assert(L->keys.size() == n_keys+1);
-        for(int i = (n_keys+1) / 2; i < n_keys+1; i++){
+        // Ex.
+        // n_keys == odd  => (n_keys+1)/2, (n_keys+1)/2
+        // n_keys == even => (n_keys+1+1)/2, (n_keys+1-1)/2
+        int mid = (n_keys+1+1) / 2;
+        for(int i = mid; i < n_keys+1; i++){
             new_L->keys.push_back(L->keys[i]);
             new_L->tuple_indices.push_back(L->tuple_indices[i]);
         }
@@ -111,8 +115,8 @@ struct BPlusTree {
         new_L->next = next;
         L->next = new_L;
         // Shrink L ( discard [(n_keys+1)/2, n_keys+1) )
-        L->keys.resize((n_keys+1)/2);
-        L->tuple_indices.resize((n_keys+1)/2);
+        L->keys.resize(mid);
+        L->tuple_indices.resize(mid);
         assert(new_L->keys.size() > 0);
         int new_key = new_L->keys[0]; // use this to split there two nodes
         insert_in_parent(L, new_key, new_L, path);
@@ -156,9 +160,9 @@ struct BPlusTree {
         //           ^
         //      3 pointers on the left, 3 pointers on the right
         // odd: 1 2 3 4*
-        //        ^
-        //      2 pointers on the left, 3 pointers on the right
-        int mid = (n_keys+1-1)/2;
+        //          ^
+        //      3 pointers on the left, 2 pointers on the right
+        int mid = (n_keys+1)/2;
         int mid_key = parent->keys[mid];
 
         // Copy half of the content to the right
@@ -192,6 +196,7 @@ ostream &operator<<(ostream &os, const TreeNode *node){
             os << node->keys[i] << "(key) | ";
         }
         os << "\n";
+        os << "Next: " << (void const *) node->next << "\n";
     }
     return os;
 }
@@ -252,4 +257,14 @@ int main(){
         cout << "Insert: " << "(" << k << "," << tidx << ")\n";
         cout << t;
     }
+
+    BPlusTree t2(3, 2);
+    v = {{3, 3}, {4, 4}, {5, 5}, {2, 2}, {1, 1}};
+    for(auto &p: v){
+        auto [k, tidx] = p;
+        t2.insert(k, tidx);
+        cout << "Insert: " << "(" << k << "," << tidx << ")\n";
+        cout << t2;
+    }
+    return 0;
 }
