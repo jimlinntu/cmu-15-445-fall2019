@@ -1,6 +1,8 @@
 #include <bits/stdc++.h>
 using namespace std;
 
+bool DEBUG = 1;
+
 struct TreeNode {
     int n_child;
     int n_keys;
@@ -33,6 +35,8 @@ struct TreeNode {
     }
 };
 
+// A B+Tree that support insertion and deletion
+// NOTE: This B+Tree does not support duplicate keys
 struct BPlusTree {
     int n_child;
     int n_keys;
@@ -40,6 +44,7 @@ struct BPlusTree {
 
     BPlusTree(int nc, int nk){
         assert(nc - 1 == nk);
+        assert(nk >= 1);
         n_child = nc;
         n_keys = nk;
         root = nullptr;
@@ -178,6 +183,242 @@ struct BPlusTree {
         // Recursively update its parent
         insert_in_parent(parent, mid_key, new_parent, path);
     }
+
+    bool del_key_from_leaf(TreeNode *L, int key, int tuple_idx){
+        int i = 0;
+        assert(L->keys.size() == L->tuple_indices.size());
+        for(; i < L->keys.size(); i++){
+            if(L->keys[i] == key and L->tuple_indices[i] == tuple_idx) break;
+        }
+        // Not found
+        if(i == L->keys.size()) return false;
+
+        // Delete (key, tuple_idx)
+        L->keys.erase(L->keys.begin() + i);
+        L->tuple_indices.erase(L->tuple_indices.begin() + i);
+        return true;
+    }
+
+    // Tell this nonleaf node to delete (k, del_node)
+    void del_in_nonleaf(TreeNode *node, int k, TreeNode *del_node, vector<TreeNode*> &path){
+        assert(node != nullptr and !node->is_leaf);
+        assert(path.back() == node);
+        path.pop_back();
+        // delete k
+        int i = find(node->keys.begin(), node->keys.end(), k) - node->keys.begin();
+
+        // k | del_node
+        node->keys.erase(node->keys.begin() + i);
+        assert(node->children[i+1] == del_node);
+        node->children.erase(node->children.begin() + i + 1);
+
+        // if this root has only one child, let this child be a root
+        if(node == root){
+            if(root->children.size() == 1){
+                TreeNode *new_root = root->children[0];
+                root->children.clear();
+                delete root;
+                root = new_root;
+            }
+            // otherwise, do nothing
+            return;
+        }
+
+        // if this node has enough pointers (children)
+        if(node->criterion()) return;
+
+        assert(path.size() > 0);
+        TreeNode *parent = path.back();
+        TreeNode *sibling;
+        int split_key;
+        bool is_right;
+
+        tie(sibling, split_key, is_right) = get_sibling(parent, node);
+        assert(sibling != nullptr);
+
+        if(sibling->children.size() + node->children.size() <= n_child){
+            // Coalesce
+            if(DEBUG) cout << "[DEBUG] Coalesce this nonleaf node with its sibling\n;"
+            // Maintain this order: sibling | split_key | node
+            if(is_right) swap(sibling, node);
+            // Copy keys and children to the left sibling
+            assert(node->keys.size() + 1 == node->children.size());
+
+            // K'
+            sibling->keys.push_back(split_key);
+            for(int i = 0; i < node->keys.size(); i++){
+                sibling->keys.push_back(node->keys[i]);
+                sibling->children.push_back(node->children[i]);
+            }
+            sibling->children.push_back(node->children[node->keys.size()]);
+
+            assert(sibling->keys.size() + 1 == sibling->children.size());
+
+            // Tell its parent that split_key | node needs to be deleted
+            del_in_nonleaf(parent, split_key, node, path);
+
+            // clear its pointers (avoid destructor deletion)
+            node->children.clear();
+            delete node;
+        }else{
+            // Redistribute
+            assert(sibling->children.size() > 0);
+            if(is_right){
+                if(DEBUG) cout << "[DEBUG] Redistribute this nonleaf node and is_right\n";
+                // node | split_key | sibling
+                node->keys.push_back(split_key);
+                node->children.push_back(sibling->children[0]);
+
+                int new_k = sibling->keys[0];
+
+                // Left shift the sibling
+                sibling->keys.erase(sibling->keys.begin());
+                sibling->children.erase(sibling->children.begin());
+
+                // Update the parent's split_key to new_k
+                replace_parent_k(parent, split_key, new_k);
+            }else{
+                if(DEBUG) cout << "[DEBUG] Redistribute this nonleaf node and not is_right\n";
+                // sibling | split_key | node
+                node->keys.insert(node->keys.begin(), split_key);
+                node->children.insert(node->children.begin(), sibling->children.back());
+
+                int new_k = sibling->keys.back();
+
+                // Remove the last element of sibling
+                sibling->keys.pop_back();
+                sibling->children.pop_back();
+
+                // Update the parent's split_key to new_k
+                replace_parent_k(parent, split_key, new_k);
+            }
+        }
+    }
+
+    // Get the left sibling first, if a left sibling doesn't exist, return the right one
+    // the bool represent whether it is a right one
+    tuple<TreeNode*, int, bool> get_sibling(
+            TreeNode *parent, TreeNode *child){
+        // There are at least two children (pointers)
+        assert(parent->children.size() >= 2);
+
+        auto it = find(parent->children.begin(), parent->children.end(), child);
+        assert(it != parent->children.end());
+        int i = it - parent->children.begin();
+        // Choose the left one first
+        if(i > 0){
+            // sibling | key | child
+            //                   ^
+            //                   i
+            return tuple<TreeNode*, int, bool>(
+                    parent->children[i-1], parent->keys[i-1], false);
+        }
+        // Otherwise choose the right one
+        // child | key | sibling
+        //   ^
+        //   i
+        return tuple<TreeNode*, int, bool>(parent->children[i+1], parent->keys[i], true);
+    }
+
+    // replace parent's key k into new_k
+    void replace_parent_k(TreeNode *parent, int k, int new_k){
+        assert(parent != nullptr);
+        auto it = find(parent->keys.begin(), parent->keys.end(), k);
+        assert(it != parent->keys.end());
+        int i = it - parent->keys.begin();
+        parent->keys[i] = new_k;
+    }
+
+    void del(int key, int tuple_idx){
+        if(root == nullptr) return;
+        vector<TreeNode*> path;
+        TreeNode *L = _find_leaf(root, key,  path);
+        assert(L != nullptr);
+        if(!del_key_from_leaf(L, key, tuple_idx)) return;
+        // if this leaf is still half full
+        if(L->criterion()) return;
+        if(root == L){
+            assert(root->is_leaf);
+            if(root->keys.size() == 0){
+                // Make this root a nullptr
+                delete root;
+                root = nullptr;
+            }
+            return;
+        }
+        // L has too few keys
+        path.pop_back();
+        assert(path.size() > 0);
+        TreeNode *parent = path.back();
+
+        TreeNode *sibling;
+        int k;
+        bool is_right;
+        tie(sibling, k, is_right) = get_sibling(parent, L);
+        assert(sibling != nullptr);
+
+        // Case 1: the sibling has >  (n_keys+1)/2 => coalescing
+        // Case 2: the sibling has == (n_keys+1)/2 => redistributing
+        // NOTE: there is no Case 3!
+        if(sibling->keys.size() + L->keys.size() <= n_keys){
+            // Coalesce them
+            // NOTE: Swap so that sibling will always be on the left (L will always be the one be deleted)
+            // i.e. sibling | k | L
+            //                    ^<--- delete this one
+            if(DEBUG) cout << "[DEBUG] Coalesce this leaf node with its sibling\n";
+            if(is_right) swap(sibling, L);
+            for(int i = 0; i < L->keys.size(); i++){
+                sibling->keys.push_back(L->keys[i]);
+                sibling->tuple_indices.push_back(L->tuple_indices[i]);
+            }
+            TreeNode *next = L->next;
+            sibling->next = next;
+
+            // Tell its parent that (k, L) is deleted
+            del_in_nonleaf(parent, k, L, path);
+            // Then we can safely delete L
+            delete L;
+        }else{
+            // Redistribute one element from the sibling
+            assert(sibling->keys.size() >= 2);
+            if(is_right){
+                // Ex.
+                // delete 2:
+                //    |1 2 |  |4 5 6|
+                //    |1 4 |  |5 6  |
+                if(DEBUG) cout << "[DEBUG] Redistribute this leaf node and is_right\n";
+                // L | k | sibling
+                // steal the smallest element from its sibling
+                L->keys.push_back(sibling->keys[0]);
+                L->tuple_indices.push_back(sibling->tuple_indices[0]);
+
+                // Left shift the sibling's keys and tuple_indices
+                sibling->keys.erase(sibling->keys.begin());
+                sibling->tuple_indices.erase(sibling->tuple_indices.begin());
+
+                // The new splitting key
+                int new_k = sibling->keys[0];
+
+                // update parent's k to the new_k
+                replace_parent_k(parent, k, new_k);
+            }else{
+                if(DEBUG) cout << "[DEBUG] Redistribute this leaf node and not is_right\n";
+                // sibling | k | L
+                // steal the largest element in the sibling
+                L->keys.insert(L->keys.begin(), sibling->keys.back());
+                L->tuple_indices.insert(L->tuple_indices.begin(), sibling->tuple_indices.back());
+
+                // remove that element in the sibling
+                sibling->keys.pop_back();
+                sibling->tuple_indices.pop_back();
+
+                int new_k = L->keys[0];
+
+                // update parent's k to the new_k
+                replace_parent_k(parent, k, new_k);
+            }
+        }
+    }
 };
 
 ostream &operator<<(ostream &os, const TreeNode *node){
@@ -221,6 +462,10 @@ ostream &operator<<(ostream &os, const BPlusTree &t){
     return os;
 }
 
+ostream &operator<<(ostream &os, const BPlusTree *t){
+    return os << *t;
+}
+
 // Tuple simulates a database tuple (or record)
 struct Tuple {
     int id;
@@ -238,6 +483,57 @@ string random_str(size_t len){
     string s(len, 0);
     generate_n(s.begin(), len, generator);
     return s;
+}
+
+BPlusTree* generate_b_plus_tree(vector<pair<int, int>> &v){
+    BPlusTree *t = new BPlusTree(4, 3);
+    for(auto &p: v){
+        t->insert(p.first, p.second);
+    }
+    return t;
+}
+
+void test_delete(){
+    vector<pair<int, int>> v = {{5, 5}, {7, 7}, {10, 10}, {14, 14}, {17, 17}, {20, 20}, {16, 16}};
+
+    cout << "Test redistribute leaf:\n";
+    BPlusTree *t = generate_b_plus_tree(v);
+    cout << t;
+    t->del(7, 7);
+    cout << t;
+    delete t;
+
+    v = {{5, 5}, {7, 7}, {10, 10}, {14, 14}, {17, 17}, {20, 20}, {11, 11}};
+    cout << "Test redistribute leaf-2:\n";
+    t = generate_b_plus_tree(v);
+    cout << t;
+    t->del(20, 20);
+    cout << t;
+    t->del(20, 20);
+    cout << t;
+    delete t;
+
+
+    v = {{1, 1}, {5, 5}, {8, 8}, {12, 12}, {15, 15}, {19, 19}, {23, 23}, {26, 26},
+         {30, 30}, {35, 35}, {20, 20}, {22, 22}, {21, 21}};
+    cout << "Simulate textbook Figure 11.13:\n";
+    t = generate_b_plus_tree(v);
+    cout << t;
+
+    cout << "Figure 11.16:\n";
+    t->del(30, 30);
+    cout << t;
+
+    cout << "Figure 11.17:\n";
+    t->del(26, 26);
+    t->del(35, 35);
+    cout << t;
+
+    cout << "Figure 11.18:\n";
+    t->del(20, 20);
+    cout << t;
+
+    delete t;
 }
 
 int main(){
@@ -266,5 +562,7 @@ int main(){
         cout << "Insert: " << "(" << k << "," << tidx << ")\n";
         cout << t2;
     }
+
+    test_delete();
     return 0;
 }
